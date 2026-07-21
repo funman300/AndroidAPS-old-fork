@@ -3,3 +3,13 @@ root = true
 
 [*{kt,kts}]
 disabled_rules=no-wildcard-imports
+
+# Upstream 3.4.2.3 ships 22 ktlint violations in this debug-only source set
+# (LeakCanaryConfig.kt, LeakUploadService.kt). They are upstream's files,
+# untouched by this fork, so reformatting them would put fork-local edits on
+# upstream code and conflict on every sync. Exempting the source set instead
+# keeps the ktlint gate usable: without this, any change touching app/ fails
+# on violations that are not ours, and the daily upstream sync would file a
+# spurious "sync broke the build" issue most weeks.
+[app/src/debug/**.{kt,kts}]
+ktlint = disabled

@@ -254,18 +254,60 @@ jobs:
           BASE="$GITEA_URL/api/v1/repos/$GITEA_OWNER/$GITEA_REPO"
           AUTH="Authorization: token $GITEA_TOKEN"
 
+          # ── Build the release body ───────────────────────────────────────────
+          # Fetch a few recent releases and pick the newest that is not this tag,
+          # so a re-run against an existing release still compares against the
+          # genuine predecessor.
+          PREV=$(curl -sf -H "$AUTH" "$BASE/releases?limit=5" || echo '[]')
+
+          prev_size_of() {
+            echo "$PREV" | jq -r --arg n "$1" --arg t "$TAG" \
+              '[ .[] | select(.tag_name != $t) ] | .[0].assets[]? | select(.name == $n) | .size' \
+              | head -1
+          }
+
+          fmt_size() { awk -v s="$1" 'BEGIN{printf "%.2f MiB", s/1048576}'; }
+
+          fmt_delta() {
+            local now="$1" prev="$2"
+            if [ -z "$prev" ] || [ "$prev" = "null" ]; then echo "n/a"; return; fi
+            awk -v d="$((now - prev))" -v p="$prev" \
+              'BEGIN{printf "%+.2f MiB (%+.1f%%)", d/1048576, (p==0 ? 0 : 100*d/p)}'
+          }
+
+          {
+            printf 'Automated build of AAPS %s from upstream nightscout/AndroidAPS.\n\n' "$VERSION"
+            printf '| Asset | Size | Δ vs previous | SHA-256 |\n'
+            printf '| --- | --- | --- | --- |\n'
+            for FILE in "$APK" "$WEAR_APK"; do
+              NAME="$(basename "$FILE")"
+              SIZE="$(stat -c%s "$FILE")"
+              SHA="$(sha256sum "$FILE" | awk '{print $1}')"
+              printf '| `%s` | %s | %s | `%s` |\n' \
+                "$NAME" "$(fmt_size "$SIZE")" \
+                "$(fmt_delta "$SIZE" "$(prev_size_of "$NAME")")" "$SHA"
+            done
+          } > /tmp/release-body.md
+
+          RELEASE_BODY="$(cat /tmp/release-body.md)"
+          echo "Release body:"
+          cat /tmp/release-body.md
+
           echo "🔍 Checking if Gitea release $TAG already exists..."
           EXISTING_ID=$(curl -sf -H "$AUTH" "$BASE/releases/tags/$TAG" | jq -r '.id // empty')
 
           if [ -n "$EXISTING_ID" ]; then
-            echo "ℹ️ Release $TAG already exists (id=$EXISTING_ID) — uploading assets."
+            echo "ℹ️ Release $TAG already exists (id=$EXISTING_ID) — refreshing notes and uploading assets."
             RELEASE_ID="$EXISTING_ID"
+            PATCH=$(jq -n --arg body "$RELEASE_BODY" '{body: $body}')
+            curl -sf -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
+              "$BASE/releases/$RELEASE_ID" -d "$PATCH" >/dev/null
           else
             echo "📦 Creating Gitea release $TAG..."
             BODY=$(jq -n \
               --arg tag  "$TAG" \
               --arg name "AAPS ${VERSION}${SUFFIX}" \
-              --arg body "Automated build of AAPS ${VERSION} from upstream nightscout/AndroidAPS." \
+              --arg body "$RELEASE_BODY" \
               '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
             RESPONSE=$(curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
               "$BASE/releases" -d "$BODY")

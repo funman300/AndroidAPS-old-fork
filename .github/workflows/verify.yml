@@ -1,0 +1,91 @@
+name: Verify
+
+# Automated build verification for this fork.
+#
+# Every other build workflow here is workflow_dispatch-only, so nothing notices
+# when a commit breaks the build — and in practice the commits that land on
+# master are unattended daily merges from sync-upstream.yml.
+#
+# No secrets are referenced anywhere in this file. Debug variants are signed
+# with the standard debug key, which is what makes pull_request runs from forks
+# safe to execute.
+
+on:
+  workflow_dispatch: {}   # Task 3 adds pull_request and workflow_call
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Matches branch-ci.yml's tuning. -Xss1024m is load-bearing for Kotlin
+  # compilation of this codebase. GRADLE_OPTS is parsed by the gradle launcher,
+  # which respects the embedded quoting.
+  GRADLE_OPTS: >-
+    -Dorg.gradle.jvmargs="-Xmx8g -XX:+UseParallelGC -Xss1024m"
+    -Dkotlin.daemon.jvm.options="-Xmx2g"
+    -Dkotlin.compiler.execution.strategy=in-process
+    -Dorg.gradle.daemon=true
+    -Dorg.gradle.workers.max=8
+    -Dorg.gradle.caching=true
+
+jobs:
+  ktlint:
+    name: ktlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up build
+        uses: ./.github/actions/setup-aaps-build
+
+      - name: Run ktlintCheck
+        run: ./gradlew ktlintCheck -PfirebaseDisable
+
+      - name: Upload ktlint reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ktlint-reports
+          path: '**/build/reports/ktlint/**'
+          retention-days: 7
+          if-no-files-found: ignore
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up build
+        uses: ./.github/actions/setup-aaps-build
+
+      - name: Run unit tests
+        run: ./gradlew -PfirebaseDisable testFullDebugUnitTest
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: '**/build/reports/tests/**'
+          retention-days: 7
+          if-no-files-found: ignore
+
+  assemble:
+    name: Assemble
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up build
+        uses: ./.github/actions/setup-aaps-build
+
+      - name: Assemble debug APKs
+        run: ./gradlew -PfirebaseDisable :app:assembleFullDebug :wear:assembleFullDebug

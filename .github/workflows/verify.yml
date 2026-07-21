@@ -11,7 +11,9 @@ name: Verify
 # safe to execute.
 
 on:
-  workflow_dispatch: {}   # Task 3 adds pull_request and workflow_call
+  pull_request:
+  workflow_call: {}
+  workflow_dispatch: {}
 
 concurrency:
   group: verify-${{ github.ref }}

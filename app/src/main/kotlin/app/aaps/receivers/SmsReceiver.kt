@@ -5,3 +5,4 @@ package app.aaps.receivers
  * receiving SMS requires a special permission in the manifest, which necessitates a separate receiver.
  */
 class SmsReceiver : DataReceiver()
+// CI probe: confirms the app/src/debug ktlint exemption works.

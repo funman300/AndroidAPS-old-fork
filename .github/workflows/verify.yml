@@ -49,12 +49,61 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ inputs.ref || github.sha }}
+          # Needed so the changed-module diff below has a base to compare against.
+          fetch-depth: 0
 
       - name: Set up build
         uses: ./.github/actions/setup-aaps-build
 
-      - name: Run ktlintCheck
-        run: ./gradlew ktlintCheck -PfirebaseDisable
+      # ktlintCheck across the whole repo fails on upstream's own code: as of
+      # upstream 3.4.2.3 there are 22 formatting violations in two files under
+      # app/src/debug (LeakCanaryConfig.kt, LeakUploadService.kt), both added by
+      # upstream and untouched by this fork. Reformatting them would put
+      # fork-local edits on upstream files and conflict on every future sync, so
+      # this gate is scoped to the modules a change actually touches. New
+      # violations are caught; upstream's pre-existing ones are left alone.
+      - name: Determine changed Gradle modules
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            # For a workflow_call from the upstream sync, HEAD is the merge
+            # commit, so HEAD~1 is the previous master and the diff is exactly
+            # what the sync brought in.
+            BASE="$(git rev-parse HEAD~1)"
+          fi
+          echo "Comparing against ${BASE}"
+
+          git diff --name-only --diff-filter=d "$BASE" HEAD -- '*.kt' '*.kts' > /tmp/changed.txt || true
+          echo "Changed Kotlin files:"; cat /tmp/changed.txt
+
+          : > /tmp/modules.txt
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            # buildSrc is a separate included build, so ":buildSrc:ktlintCheck"
+            # does not exist from the root build and would fail as an unknown
+            # task. Skip it rather than emit a task name Gradle cannot resolve.
+            case "$f" in buildSrc/*) echo "  (skipping $f — buildSrc is a separate build)"; continue ;; esac
+
+            d="$(dirname "$f")"
+            while [ "$d" != "." ] && [ "$d" != "/" ]; do
+              if [ -f "$d/build.gradle.kts" ] || [ -f "$d/build.gradle" ]; then
+                echo ":$(echo "$d" | tr '/' ':'):ktlintCheck" >> /tmp/modules.txt
+                break
+              fi
+              d="$(dirname "$d")"
+            done
+          done < /tmp/changed.txt
+
+          sort -u /tmp/modules.txt -o /tmp/modules.txt
+          TASKS="$(paste -sd' ' /tmp/modules.txt)"
+          echo "tasks=$TASKS" >> "$GITHUB_OUTPUT"
+          echo "ktlint tasks: ${TASKS:-<none — no Kotlin changes, nothing to check>}"
+
+      - name: Run ktlintCheck on changed modules
+        if: steps.changed.outputs.tasks != ''
+        run: ./gradlew -PfirebaseDisable ${{ steps.changed.outputs.tasks }}
 
       - name: Upload ktlint reports
         if: failure()

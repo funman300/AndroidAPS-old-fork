@@ -53,9 +53,28 @@ task already exists. `runtests.sh` is
 
 ### 1. `.github/workflows/verify.yml` (new)
 
-Triggers: `push` to `master`, `pull_request`, and `workflow_call` (so
-`sync-upstream.yml` can invoke it). Concurrency group per ref with
+Triggers: `pull_request`, `workflow_call` (so `sync-upstream.yml` can invoke it),
+and `workflow_dispatch`. Concurrency group per ref with
 `cancel-in-progress: true`.
+
+**Why there is no `push` trigger.** The obvious design — trigger on push to
+`master` and let the daily sync's own push set it off — is unreliable here, and
+unreliable in a way that depends on repository configuration rather than on
+anything visible in the workflow file. GitHub deliberately does not trigger
+workflows from pushes made with `GITHUB_TOKEN`, to prevent recursion. But
+`sync-upstream.yml` checks out with `secrets.WORKFLOW_PUSH_TOKEN || github.token`,
+so whether its push triggers anything depends on whether that PAT secret happens
+to be configured:
+
+- PAT absent → the push does not trigger `verify`, and syncs go unverified.
+- PAT present → the push triggers `verify`, *and* `sync-upstream.yml` calls it,
+  producing two full builds of a large Android project per sync.
+
+Both failure modes are silent. Driving verification explicitly through
+`workflow_call` makes it deterministic: exactly one verification run per sync,
+regardless of token configuration. Pull requests are covered by the
+`pull_request` trigger, and a human direct-push to `master` — rare on this fork,
+which exists to track upstream — is covered by `workflow_dispatch`.
 
 Every job shares the same preamble, matching what `branch-ci.yml` already does so
 the fork has one way of setting up a build:
@@ -183,7 +202,12 @@ something it should not have.
 - **Cache thrash.** A daily upstream merge invalidates much of the Gradle cache,
   so post-sync runs will be slow. Accepted; it is the run that most needs to
   happen.
-- **`firebaseDisable`.** Assumed sufficient to build without `google-services.json`,
-  since `runtests.sh` relies on it. If `assembleFullDebug` still requires the
-  file, the `assemble` job will write a stub `google-services.json` the way
-  upstream CI does, rather than putting a real one in secrets.
+- **Firebase configuration.** Not a risk: `app/google-services.json` is committed
+  to the repository, and `branch-ci.yml` already assembles without any Firebase
+  setup step. `-PfirebaseDisable` is carried on the Gradle invocations purely for
+  parity with `runtests.sh`; it matches no `hasProperty` check anywhere in the
+  build and is a no-op leftover.
+
+- **No `push` coverage on `master`.** A human pushing directly to `master` is not
+  verified automatically and must dispatch `verify.yml`. Accepted in exchange for
+  deterministic single-build behaviour; see the rationale in section 1.

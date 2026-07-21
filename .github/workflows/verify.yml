@@ -12,11 +12,16 @@ name: Verify
 
 on:
   pull_request:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit SHA to verify. Defaults to the triggering commit.
+        required: false
+        type: string
   workflow_dispatch: {}
 
 concurrency:
-  group: verify-${{ github.ref }}
+  group: verify-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -38,9 +43,12 @@ jobs:
   ktlint:
     name: ktlint
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Set up build
         uses: ./.github/actions/setup-aaps-build
@@ -60,9 +68,12 @@ jobs:
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Set up build
         uses: ./.github/actions/setup-aaps-build
@@ -82,9 +93,12 @@ jobs:
   assemble:
     name: Assemble
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Set up build
         uses: ./.github/actions/setup-aaps-build

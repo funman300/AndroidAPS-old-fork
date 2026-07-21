@@ -212,8 +212,13 @@ jobs:
               continue
             fi
             echo "$OUT"
-            FP="$(echo "$OUT" | grep -i 'SHA-256 digest:' | head -1 \
-                  | awk '{print $NF}' | tr 'A-F' 'a-f' | tr -d ' :')"
+            # Match the CERTIFICATE digest specifically: apksigner also prints a
+            # "public key SHA-256 digest" line, and a bare 'SHA-256 digest:'
+            # match only avoids it by luck of ordering. The `|| true` keeps a
+            # no-match from aborting the step under `set -e`, so the explicit
+            # "could not read" message below is actually reachable.
+            FP="$(echo "$OUT" | grep -i 'certificate SHA-256 digest:' | head -1 \
+                  | awk '{print $NF}' | tr 'A-F' 'a-f' | tr -d ' :' || true)"
             if [ -z "$FP" ]; then
               echo "❌ Could not read a certificate fingerprint from $FILE"
               FAILED=1

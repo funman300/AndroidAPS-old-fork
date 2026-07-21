@@ -232,6 +232,13 @@ git push -u origin ci/verify
 
 - [ ] **Step 5: Dispatch it against the branch and record the outcome**
 
+> **This step does not work as written.** GitHub only permits `workflow_dispatch`
+> for workflow files that exist on the repository's **default branch**, so
+> dispatching `Verify` while it lives only on `ci/verify` returns HTTP 404.
+> Observation is therefore deferred to Task 3, which adds the `pull_request`
+> trigger — a same-repo pull request runs workflows from the pull request's own
+> branch, so opening the PR is what makes the three jobs observable.
+
 From the Actions tab, run `Verify` selecting branch `ci/verify`. Wait for all three jobs.
 
 Record for the next task:

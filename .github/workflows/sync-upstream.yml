@@ -23,6 +23,9 @@ jobs:
   sync:
     name: Sync Fork with Upstream
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      range: ${{ steps.sync.outputs.range }}
     steps:
       - name: Checkout fork
         uses: actions/checkout@v5
@@ -45,16 +48,26 @@ jobs:
           git fetch upstream --tags
 
       - name: Sync master branch
+        id: sync
         run: |
           git checkout master
+          BEFORE="$(git rev-parse HEAD)"
           if git merge upstream/master --ff-only; then
             echo "✅ Fast-forward merge succeeded."
           else
             echo "⚠️ Fast-forward not possible, doing regular merge..."
             git merge upstream/master -m "chore: sync with upstream master"
           fi
+          AFTER="$(git rev-parse HEAD)"
           git push origin master
-          echo "✅ master synced with upstream."
+          if [ "$BEFORE" = "$AFTER" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ master was already up to date — no new upstream commits."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "range=${BEFORE}..${AFTER}" >> "$GITHUB_OUTPUT"
+            echo "✅ master synced with upstream (${BEFORE} → ${AFTER})."
+          fi
 
       - name: Detect new upstream tags and trigger release builds
         env:
@@ -99,3 +112,45 @@ jobs:
             gh workflow run auto-release.yml --repo "$GITHUB_REPOSITORY" --field tagName="$TAG"
             COUNT=$((COUNT + 1))
           done
+
+  verify:
+    name: Verify synced master
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    uses: ./.github/workflows/verify.yml
+
+  report-failure:
+    name: Report broken sync
+    needs: [sync, verify]
+    if: always() && needs.verify.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the breakage issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RANGE: ${{ needs.sync.outputs.range }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Upstream sync broke the build"
+          {
+            echo "Verification failed after syncing upstream \`nightscout/AndroidAPS\`."
+            echo
+            echo "- Merged range: \`${RANGE}\`"
+            echo "- Failed run: ${RUN_URL}"
+            echo
+            echo "\`master\` is not currently known to build."
+          } > /tmp/body.md
+
+          EXISTING=$(gh issue list --state open --search "\"$TITLE\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -1)
+
+          if [ -n "$EXISTING" ]; then
+            echo "Commenting on existing issue #${EXISTING}"
+            gh issue comment "$EXISTING" --body-file /tmp/body.md
+          else
+            echo "Opening a new issue"
+            gh issue create --title "$TITLE" --body-file /tmp/body.md
+          fi

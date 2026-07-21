@@ -11,5 +11,5 @@ disabled_rules=no-wildcard-imports
 # keeps the ktlint gate usable: without this, any change touching app/ fails
 # on violations that are not ours, and the daily upstream sync would file a
 # spurious "sync broke the build" issue most weeks.
-[app/src/debug/**.{kt,kts}]
+[**/Leak{CanaryConfig,UploadService}.{kt,kts}]
 ktlint = disabled

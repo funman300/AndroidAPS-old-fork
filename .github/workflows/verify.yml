@@ -101,9 +101,8 @@ jobs:
           echo "tasks=$TASKS" >> "$GITHUB_OUTPUT"
           echo "ktlint tasks: ${TASKS:-<none — no Kotlin changes, nothing to check>}"
 
-      - name: Run ktlintCheck on changed modules
-        if: steps.changed.outputs.tasks != ''
-        run: ./gradlew -PfirebaseDisable ${{ steps.changed.outputs.tasks }}
+      - name: AUDIT full-repo ktlintCheck with --continue
+        run: ./gradlew -PfirebaseDisable ktlintCheck --continue
 
       - name: Upload ktlint reports
         if: failure()

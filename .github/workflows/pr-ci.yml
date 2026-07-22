@@ -181,7 +181,7 @@ jobs:
           echo "PR_REF_TYPE=$PR_REF_TYPE" >> $GITHUB_ENV
 
       - name: Checkout pull/${{ github.event.inputs.pr_number }}/${{ github.event.inputs.pr_ref_type }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: ${{ github.event.inputs.repo }}
           ref: ${{ steps.pr_ref.outputs.ref_name }}
@@ -217,7 +217,7 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Set up JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           # Java version is defined in .github/versions.env
           java-version: ${{ env.JAVA_VERSION }}
